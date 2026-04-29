@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Ohio Teaching Placements Map</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/papaparse@5.3.2/papaparse.min.js"></script>
+
+  <style>
+#header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 50px;
+  background: white;
+  z-index: 1000;
+  text-align: center;
+  line-height: 50px;
+  font-size: 20px;
+  font-weight: bold;
+  border-bottom: 1px solid #ccc;
+}
+
+
+#map {
+  position: absolute;
+  top: 50px;
+  left: 0;
+  right: 0;
+  bottom: 0;   /* 👈 fills remaining space perfectly */
+}
+    html, body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;   /* 👈 prevents scrolling */
+}
+
+
+
+    .legend {
+      background: white;
+      padding: 10px;
+      line-height: 1.5em;
+      font-size: 14px;
+      border: 1px solid #999;
+      border-radius: 4px;
+    }
+
+    .legend i {
+      width: 18px;
+      height: 18px;
+      float: left;
+      margin-right: 8px;
+      opacity: 0.8;
+      border: 1px solid #555;
+    }
+
+.leaflet-control {
+  margin-bottom: 60px;
+}
+
+  </style>
+</head>
+
+<body>
+<div id="header">IG District Impact: Student Teacher Placements</div>
+<div id="map"></div>
+
+<script>
+const csvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSEcKRL5Me5ZvzyP03_qwSSC0Iod8frvj9eazXZ98oysG3IcIcX2j4hNSAY5iOXSHWIBE06WtJYCZjP/pub?gid=0&single=true&output=csv";
+
+const geojsonUrl = "ohio_districts.geojson";
+
+const map = L.map("map").setView([40.3, -82.8], 8);
+
+let csvRowsById = {};
+
+L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+  attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+  subdomains: "abcd",
+  maxZoom: 20
+}).addTo(map);
+
+let dataMap = {};
+let districtLayer;
+let pointsLayer = L.layerGroup();
+
+function getColor(value) {
+  if (value === 3) return "#238443";
+  if (value === 2) return "#78c679";
+  if (value === 1) return "#d9f0d3";
+  return "#ffffff";
+}
+
+function getPointRadius(value) {
+  if (value === 3) return 12;
+  if (value === 2) return 8;
+  if (value === 1) return 4;
+  return 0;
+}
+
+function getPlacementLabel(value) {
+  if (value === 3) return "Large";
+  if (value === 2) return "Medium";
+  if (value === 1) return "Small";
+  return "None";
+}
+
+function districtStyle(feature) {
+  const id = String(feature.properties.GEOID).trim();
+  const val = dataMap[id];
+
+  return {
+    fillColor: getColor(val),
+    weight: 0.6,
+    color: "#555",
+    fillOpacity: val && val > 0 ? 0.75 : 0
+  };
+}
+
+
+
+Papa.parse(csvUrl, {
+  download: true,
+  header: true,
+  skipEmptyLines: true,
+
+  complete: function(results) {
+    console.log("CSV loaded:", results.data);
+
+    results.data.forEach(row => {
+      const id = String(row.AgencyID).trim().padStart(6, "0");
+      const combined = parseInt(row.Combined);
+
+if (id) {
+  dataMap[id] = combined;
+  csvRowsById[id] = row;
+}
+
+      const lat = parseFloat(row.Latitude);
+      const lon = parseFloat(row.Longitude);
+      const radius = getPointRadius(combined);
+
+      if (!isNaN(lat) && !isNaN(lon) && radius > 0) {
+        const point = L.circleMarker([lat, lon], {
+          radius: radius,
+          color: "#2171b5",
+          fillColor: "#2171b5",
+          fillOpacity: 0.7,
+          weight: 1
+        });
+
+        point.bindPopup(`
+          AgencyID: ${row.AgencyID}<br>
+          Teaching Placements: ${combined}
+        `);
+
+        point.bindTooltip(`
+          AgencyID: ${row.AgencyID}<br>
+          Teaching Placements: ${combined}
+        `, { sticky: true });
+
+        pointsLayer.addLayer(point);
+      }
+    });
+
+    loadGeoJSON();
+  },
+
+  error: function(error) {
+    console.error("CSV loading error:", error);
+    alert("Could not load the Google Sheets CSV.");
+  }
+});
+
+function loadGeoJSON() {
+  fetch(geojsonUrl)
+    .then(response => {
+      if (!response.ok) {
+        throw new Error("Could not load GeoJSON file: " + response.status);
+      }
+      return response.json();
+    })
+    .then(data => {
+      districtLayer = L.geoJSON(data, {
+        style: districtStyle,
+
+        onEachFeature: function(feature, layer) {
+          const id = String(feature.properties.GEOID).trim();
+          const val = dataMap[id];
+
+const districtName = csvRowsById[id]?.DistrictOriginal ?? "Unknown";
+
+const text = `
+  District ID: ${id}<br>
+  District: ${districtName}<br>
+  Teaching Placements: ${getPlacementLabel(val)}
+`;
+
+          layer.bindPopup(text);
+          layer.bindTooltip(text, { sticky: true });
+        }
+      }).addTo(map);
+
+
+
+      const overlayMaps = {
+        "District Shading": districtLayer,
+        "School Points": pointsLayer
+      };
+
+      L.control.layers(null, overlayMaps, { collapsed: false }).addTo(map);
+    })
+    .catch(error => {
+      console.error(error);
+      alert(error.message);
+    });
+}
+
+const legend = L.control({ position: "bottomright" });
+
+legend.onAdd = function(map) {
+  const div = L.DomUtil.create("div", "legend");
+
+  div.innerHTML = `
+    <strong>Teaching Placements</strong><br>
+    <i style="background:#238443"></i> Large (3)<br>
+    <i style="background:#78c679"></i> Medium (2)<br>
+    <i style="background:#d9f0d3"></i> Small (1)<br>
+    <i style="background:white"></i> None / No data
+  `;
+
+  return div;
+};
+
+legend.addTo(map);
+</script>
+</body>
+</html>
