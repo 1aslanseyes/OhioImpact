@@ -48,6 +48,14 @@
       border-radius: 4px;
     }
 
+.higher-ed-icon {
+  width: 12px;
+  height: 12px;
+  background: #6a3d9a;
+  border: 1px solid #333;
+  transform: rotate(45deg);
+}
+
     .legend i {
       width: 18px;
       height: 18px;
@@ -120,6 +128,7 @@
 
 <script>
 const csvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSEcKRL5Me5ZvzyP03_qwSSC0Iod8frvj9eazXZ98oysG3IcIcX2j4hNSAY5iOXSHWIBE06WtJYCZjP/pub?gid=0&single=true&output=csv";
+const higherEdCsvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTQRHV8jK3877Wd5756VJkb-5q9twMtoex58MRcTdi4lkkV1_RNnxzBD7XewDOSATy1mXYjsmYmlY_1/pub?gid=0&single=true&output=csv";
 const geojsonUrl = "ohio_districts.geojson";
 
 const map = L.map("map").setView([40.3, -82.8], 8);
@@ -134,6 +143,7 @@ let dataMap = {};
 let csvRowsById = {};
 let districtLayer;
 let pointsLayer = L.layerGroup();
+let higherEdLayer = L.layerGroup();
 
 function getColor(value) {
   if (value === 3) return "#238443";
@@ -143,8 +153,8 @@ function getColor(value) {
 }
 
 function getPointRadius(value) {
-  if (value === 3) return 12;
-  if (value === 2) return 8;
+  if (value === 3) return 20;
+  if (value === 2) return 12;
   if (value === 1) return 4;
   return 0;
 }
@@ -252,6 +262,53 @@ Papa.parse(csvUrl, {
   }
 });
 
+
+Papa.parse(higherEdCsvUrl, {
+  download: true,
+  header: true,
+  skipEmptyLines: true,
+
+  complete: function(results) {
+    console.log("Higher ed CSV loaded:", results.data);
+
+    results.data.forEach(row => {
+      const lat = parseFloat(row.Latitude);
+      const lon = parseFloat(row.Longitude);
+
+      const name =
+        row.University ||
+        row.Name ||
+        row.Institution ||
+        row.School ||
+        row.College ||
+        "Higher Ed Institution";
+
+      if (!isNaN(lat) && !isNaN(lon)) {
+        const icon = L.divIcon({
+          className: "",
+          html: '<div class="higher-ed-icon"></div>',
+          iconSize: [12, 12],
+          iconAnchor: [6, 6]
+        });
+
+        const marker = L.marker([lat, lon], { icon: icon });
+
+        marker.bindTooltip(name, { sticky: true });
+        marker.bindPopup(name);
+
+        higherEdLayer.addLayer(marker);
+      }
+    });
+  },
+
+  error: function(error) {
+    console.error("Higher ed CSV loading error:", error);
+    alert("Could not load the higher ed CSV.");
+  }
+});
+
+
+
 function loadGeoJSON() {
   fetch(geojsonUrl)
     .then(response => {
@@ -281,9 +338,10 @@ function loadGeoJSON() {
       }).addTo(map);
 
       const overlayMaps = {
-        "District Shading": districtLayer,
-        "Schools / Placements": pointsLayer
-      };
+  "District Shading": districtLayer,
+  "Schools / Placements": pointsLayer,
+  "Institutes of Higher Education": higherEdLayer
+};
 
       L.control.layers(null, overlayMaps, { collapsed: false }).addTo(map);
     })
